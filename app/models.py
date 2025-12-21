@@ -48,6 +48,14 @@ class Category(db.Model):
     __table_args__ = (
         db.UniqueConstraint('user_id', 'name', name='unique_category_per_user'),
     )
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'name': self.name,
+            'color': self.color,
+            # 'code': self.code,  ← пока нет, добавим позже
+        }
     
     def __repr__(self):
         return f'<Category {self.name}>'
@@ -73,6 +81,17 @@ class Event(db.Model):
     
     def __repr__(self):
         return f'<Event {self.type} {self.start_time}>'
+
+    def to_dict(self):
+        return {
+            'id': self.id,
+            'category_id': self.category_id,
+            'start_time': self.start_time.isoformat() if self.start_time else None,
+            'end_time': self.end_time.isoformat() if self.end_time else None,
+            'type': self.type,  # 'plan' или 'fact'
+            'source': self.source,  # 'web' или 'telegram'
+            'created_at': self.created_at.isoformat() if self.created_at else None
+        }
 
 class Template(db.Model):
     """Шаблоны пользователя"""
