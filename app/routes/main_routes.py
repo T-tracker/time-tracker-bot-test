@@ -40,7 +40,8 @@ def dashboard():
                          stats=stats, 
                          recent_events=recent_events,
                          categories=categories,
-                         user=current_user)
+                         user=current_user,
+                         now=datetime.now())  # ← ИСПРАВЛЕНО: добавлено now
 
 @main_bp.route('/profile')
 @login_required
