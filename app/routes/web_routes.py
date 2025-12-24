@@ -9,7 +9,7 @@ from datetime import datetime, timedelta
 web_pages_bp = Blueprint('web_pages', __name__)
 
 # ====== Blueprint для API расписания ======
-schedule_api_bp = Blueprint('schedule_api', __name__)  # Убрал url_prefix
+schedule_api_bp = Blueprint('schedule_api', __name__, url_prefix='/api/v1')  # ДОБАВЛЕН url_prefix
 
 # ======== ВЕБ-СТРАНИЦЫ ========
 
@@ -53,6 +53,43 @@ def get_categories():
         'count': len(categories_list),
         'categories': categories_list
     })
+
+
+# ========== ДОБАВЛЕН ПОСТ-РОУТ ==========
+@schedule_api_bp.route('/categories', methods=['POST'])
+@login_required
+def create_category():
+    """Создать новую категорию"""
+    data = request.get_json()
+    
+    if not data or 'name' not in data:
+        return jsonify({'error': 'Category name is required'}), 400
+    
+    # Проверка уникальности
+    existing = Category.query.filter_by(
+        user_id=current_user.id,
+        name=data['name'].strip()
+    ).first()
+    
+    if existing:
+        return jsonify({'error': 'Category already exists'}), 409
+    
+    # Создание категории
+    category = Category(
+        user_id=current_user.id,
+        name=data['name'].strip(),
+        color=data.get('color', '#4361ee'),
+        description=data.get('description', '')
+    )
+    
+    db.session.add(category)
+    db.session.commit()
+    
+    return jsonify({
+        'status': 'success',
+        'category': category.to_dict(),
+        'message': f'Category "{category.name}" created successfully'
+    }), 201
 
 
 @schedule_api_bp.route('/events', methods=['POST'])
@@ -109,7 +146,7 @@ def get_current_week():
         day_date = start_of_week + timedelta(days=i)
         days.append({
             'name': ['Понедельник', 'Вторник', 'Среда', 'Четверг', 
-                    'Пятница', 'Суббота', 'Воскресенье'][i],
+                    'Пятница', 'Саббота', 'Воскресенье'][i],
             'date': day_date.strftime('%d.%m.%Y'),
             'full_date': day_date.strftime('%Y-%m-%d'),
             'short_name': ['Пн', 'Вт', 'Ср', 'Чт', 'Пт', 'Сб', 'Вс'][i]
@@ -131,32 +168,39 @@ def get_current_week():
     })
 
 
+# ========== ИСПРАВЛЕН РОУТ ==========
+@schedule_api_bp.route('/events/week/<week_id>', methods=['GET'])
 @schedule_api_bp.route('/events/week', methods=['GET'])
 @login_required
-def get_week_events():
-    """Получить события текущей недели"""
-    # Получаем параметры недели (необязательно)
-    year = request.args.get('year', type=int)
-    week = request.args.get('week', type=int)
-    
-    # Если параметры не указаны, используем текущую неделю
-    if not year or not week:
-        today = datetime.now().date()
-        year, week, _ = today.isocalendar()
+def get_week_events(week_id=None):
+    """Получить события недели (поддерживает оба формата URL)"""
+    # Если передан week_id в формате "2025-W52"
+    if week_id:
+        try:
+            year_str, week_str = week_id.split('-W')
+            year = int(year_str)
+            week = int(week_str)
+        except ValueError:
+            return jsonify({'error': 'Invalid week format. Use: YYYY-Www'}), 400
     else:
-        # Находим дату по году и номеру недели
-        first_day = datetime.strptime(f'{year}-W{week:02d}-1', "%Y-W%W-%w").date()
+        # Или используем query параметры
+        year = request.args.get('year', type=int)
+        week = request.args.get('week', type=int)
+        
+        # Если не указаны - текущая неделя
+        if not year or not week:
+            today = datetime.now().date()
+            year, week, _ = today.isocalendar()
     
     # Рассчитываем начало и конец недели
-    start_of_week = datetime.strptime(f'{year}-W{week:02d}-1', "%Y-W%W-%w") if year and week else \
-                    datetime.now().date() - timedelta(days=datetime.now().date().weekday())
+    start_of_week = datetime.strptime(f'{year}-W{week:02d}-1', "%Y-W%W-%w")
     end_of_week = start_of_week + timedelta(days=6)
     
     # Получаем события пользователя за эту неделю
     events = Event.query.filter(
         Event.user_id == current_user.id,
         Event.start_time >= start_of_week,
-        Event.start_time <= end_of_week + timedelta(days=1)  # +1 день чтобы включить события до конца дня
+        Event.start_time <= end_of_week + timedelta(days=1)
     ).order_by(Event.start_time).all()
     
     events_list = [event.to_dict() for event in events]
